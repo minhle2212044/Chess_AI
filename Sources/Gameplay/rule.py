@@ -24,7 +24,6 @@ def is_square_attacked(board, pos, attacker_color):
             p = board.board[r][c]
             if p and p.color == attacker_color:
 
-                # vua chỉ xét bước 1 ô tránh đệ quy
                 if isinstance(p, King):
                     moves = p.get_moves(board, r, c, _is_checking_attack=True)
                 else:
@@ -36,12 +35,12 @@ def is_square_attacked(board, pos, attacker_color):
     return False
 
 # ------------------------------------------------------------
-# 3. Kiểm tra chiếu
+# 3. Chiếu
 # ------------------------------------------------------------
 def is_in_check(board, color):
     king_pos = find_king(board, color)
     if not king_pos:
-        return True  # mất vua -> coi như chiếu
+        return True
     enemy = "black" if color == "white" else "white"
     return is_square_attacked(board, king_pos, enemy)
 
@@ -62,7 +61,7 @@ def is_stalemate(board, color):
     return len(board.get_all_moves(color)) == 0
 
 # ------------------------------------------------------------
-# 6. Insufficient material (thiếu quân → hòa)
+# 6. Insufficient material
 # ------------------------------------------------------------
 def insufficient_material(board):
     pieces = []
@@ -82,11 +81,10 @@ def insufficient_material(board):
             if isinstance(p, (Bishop, Knight)):
                 return True
 
-    # King + Bishop vs King + Bishop (cùng màu ô)
+    # 2 tượng cùng màu ô
     if len(pieces) == 4:
         bishops = [p for p in pieces if isinstance(p, Bishop)]
         if len(bishops) == 2:
-            # nếu 2 tượng đi cùng màu ô
             cols = []
             for r in range(8):
                 for c in range(8):
@@ -96,3 +94,22 @@ def insufficient_material(board):
                 return True
 
     return False
+
+# ------------------------------------------------------------
+# 7. Threefold repetition
+# ------------------------------------------------------------
+def threefold_repetition(board):
+    if not hasattr(board, "position_history"):
+        return False
+
+    if len(board.position_history) < 3:
+        return False
+
+    last = board.position_history[-1]
+    return board.position_history.count(last) >= 3
+
+# ------------------------------------------------------------
+# 8. Fifty-move rule
+# ------------------------------------------------------------
+def fifty_move_rule(board):
+    return hasattr(board, "halfmove_clock") and board.halfmove_clock >= 100

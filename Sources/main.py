@@ -3,9 +3,11 @@ import sys
 import math
 import random
 import copy
+import numpy as np
 
 from Gameplay.board import Board
 from Gameplay.move import Pawn, Knight, Bishop, Rook, Queen, King
+from Gameplay.rule import threefold_repetition, fifty_move_rule
 from Minimax.minimax import minimax
 from ML.evaluate import AIPlayer
 from ML.adapter import to_chess_board, from_uci_move
@@ -316,9 +318,50 @@ def random_agent_move(board, color):
     return random.choice(moves) if moves else None
 
 def ml_agent_move(board, color):
+    # Convert board → python-chess
     cb = to_chess_board(board, color)
-    mv = ml_agent.get_move(cb)
-    return from_uci_move(mv.uci())
+
+    probs = ml_agent.get_probabilities(cb)
+    legal_moves = list(cb.legal_moves)
+    legal_uci = [m.uci() for m in legal_moves]
+
+    sorted_idx = np.argsort(probs)[::-1]
+
+    for idx in sorted_idx:
+        uci = ml_agent.int_to_move.get(idx)
+        if uci not in legal_uci:
+            continue
+
+        cb_copy = cb.copy()
+        mv_obj = chess.Move.from_uci(uci)
+        cb_copy.push(mv_obj)
+
+        # 1. Không được gây stalemate
+        if cb_copy.is_stalemate():
+            continue
+
+        # 2. Không tự đưa vua vào thế bị chiếu
+        if cb_copy.is_check() and cb_copy.turn == (color == "white"):
+            continue
+
+        # 3. (Quan trọng) tránh lặp thế liên tục → threefold repetition
+        simple_fen_after = cb_copy.board_fen()
+        if board.position_history.count(simple_fen_after) >= 2:
+            # move này đang tạo ra sự lặp lại
+            continue
+
+        return from_uci_move(uci)
+
+    # fallback: chọn safe move
+    for mv in legal_moves:
+        cb_copy = cb.copy()
+        cb_copy.push(mv)
+        if not cb_copy.is_stalemate():
+            return from_uci_move(mv.uci())
+
+    # final fallback
+    return from_uci_move(random.choice(legal_moves).uci())
+
 
 # -----------------------
 # Time utilities
@@ -326,10 +369,13 @@ def ml_agent_move(board, color):
 def remaining_display(side, white_ms, black_ms, turn, turn_start):
     now = pygame.time.get_ticks()
     elapsed = now - turn_start
+
     if side == "white":
-        return None if white_ms is None else max(0, white_ms - (elapsed if turn == "white" else 0))
+        if white_ms is None: return None
+        return white_ms - (elapsed if turn == "white" else 0)
     else:
-        return None if black_ms is None else max(0, black_ms - (elapsed if turn == "black" else 0))
+        if black_ms is None: return None
+        return black_ms - (elapsed if turn == "black" else 0)
 
 def deduct_clock(side, elapsed, white_ms, black_ms):
     if side == "white" and white_ms is not None:
@@ -337,6 +383,7 @@ def deduct_clock(side, elapsed, white_ms, black_ms):
     if side == "black" and black_ms is not None:
         black_ms = max(0, black_ms - elapsed)
     return white_ms, black_ms
+
 
 # -----------------------
 # Convert move to PGN-ish (full SAN is complex; we implement practical)
@@ -514,7 +561,15 @@ def run_match():
                                 san = move_to_san_full(board, mv, turn)
                                 board.move_piece(mv)
                                 move_count += 1
-
+                                # save position for draw rules
+                                fen = board.simple_fen(turn)
+                                board.position_history.append(fen)
+                                if threefold_repetition(board):
+                                    show_result_popup("Draw", "Threefold repetition", move_count)
+                                    game_over = True
+                                elif fifty_move_rule(board):
+                                    show_result_popup("Draw", "50-move rule", move_count)
+                                    game_over = True
                                 # record SAN
                                 pending_white = san
 
@@ -572,7 +627,16 @@ def run_match():
 
                 board.move_piece(mv)
                 move_count += 1
-
+                # save position for draw rules
+                fen = board.simple_fen(turn)
+                board.position_history.append(fen)
+                # draw rules
+                if threefold_repetition(board):
+                    show_result_popup("Draw", "Threefold repetition", move_count)
+                    game_over = True
+                elif fifty_move_rule(board):
+                    show_result_popup("Draw", "50-move rule", move_count)
+                    game_over = True
                 if turn == "white":
                     pending_white = san
                 else:

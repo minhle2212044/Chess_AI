@@ -60,6 +60,16 @@ class AIPlayer:
         # Fallback
         print(f"\n[CẢNH BÁO] AI Fallback: Model bí nước! Sử dụng Random move tại lượt {board.fullmove_number} (Bên {'Trắng' if board.turn else 'Đen'})")
         return random.choice(legal_moves)
+    
+    def get_probabilities(self, board):
+        matrix = board_to_matrix(board)
+        X_tensor = torch.tensor(matrix, dtype=torch.float32).unsqueeze(0).to(self.device)
+
+        with torch.no_grad():
+            logits = self.model(X_tensor)
+
+        probs = torch.softmax(logits.squeeze(0), dim=0).cpu().numpy()
+        return probs
 
 def get_random_move(board: chess.Board):
     """Chọn một nước đi ngẫu nhiên từ các nước đi hợp lệ."""
@@ -108,6 +118,7 @@ def log_game_to_file(file_path, game_index, white_name, black_name, board):
         moves = [move.uci() for move in board.move_stack]
         f.write(f"Moves: {' '.join(moves)}\n")
         f.write("\n")
+        
 
 def main():
     ai_agent = AIPlayer(MODEL_PATH, MAP_PATH)
